@@ -1,0 +1,15 @@
+creation_timestamp: 1765149529660
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1765149529660
+model_id: m-a3dba6eeb7854a7fb41ff3601c3e4a7a
+name: sentiment-logreg-tfidf
+run_id: 17f9e12da27c44979cee996320bd4f1e
+run_link: null
+source: models:/m-a3dba6eeb7854a7fb41ff3601c3e4a7a
+status: READY
+status_message: null
+storage_location: file:///app/mlruns/255673433048212646/models/m-a3dba6eeb7854a7fb41ff3601c3e4a7a/artifacts
+user_id: null
+version: 1

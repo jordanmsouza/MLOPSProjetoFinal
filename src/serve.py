@@ -1,130 +1,177 @@
 # src/serve.py
 from __future__ import annotations
 
-from fastapi import FastAPI
-from pydantic import BaseModel
-from joblib import load
 from datetime import datetime
 from pathlib import Path
 import csv
 
-from .config import MODEL_PATH, BASE_DIR
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+from .config import (
+    BASE_DIR,
+    MODEL_PATH,
+    MLFLOW_TRACKING_URI,
+    MLFLOW_MODEL_NAME,
+)
+
+import mlflow
+import mlflow.sklearn
+from joblib import load as joblib_load
+
+# ==========================
+#  Configuração de logs
+# ==========================
+
+LOGS_DIR = BASE_DIR / "logs"
+PREDICTIONS_LOG = LOGS_DIR / "predictions_log.csv"
+FEEDBACK_LOG = LOGS_DIR / "feedback_log.csv"
+
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _init_csv(path: Path, header: list[str]) -> None:
+    """Cria o arquivo CSV com header se ainda não existir."""
+    if not path.exists():
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+
+
+_init_csv(
+    PREDICTIONS_LOG,
+    ["timestamp", "text", "text_length", "sentiment", "label", "confidence"],
+)
+
+_init_csv(
+    FEEDBACK_LOG,
+    [
+        "timestamp",
+        "text",
+        "text_length",
+        "model_sentiment",
+        "model_confidence",
+        "user_sentiment",
+        "is_correct",
+    ],
+)
+
+# ==========================
+#  Carregamento do modelo
+# ==========================
+
+model = None
+MODEL_SOURCE = None
+
+try:
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    model_uri = f"models:/{MLFLOW_MODEL_NAME}/latest"
+    print(f"🔁 Tentando carregar modelo do MLflow Registry: {model_uri}")
+    model = mlflow.sklearn.load_model(model_uri)
+    MODEL_SOURCE = f"mlflow:{model_uri}"
+    print("✅ Modelo carregado do MLflow com sucesso!")
+except Exception as e:
+    print(f"⚠️ Falha ao carregar do MLflow ({e}). Tentando via joblib...")
+    print(f"🔁 Carregando modelo local de: {MODEL_PATH}")
+    model = joblib_load(MODEL_PATH)
+    MODEL_SOURCE = f"joblib:{MODEL_PATH}"
+    print("✅ Modelo carregado via joblib com sucesso!")
+
+
+# ==========================
+#  API
+# ==========================
 
 app = FastAPI(
     title="Sentiment Analysis API",
     description="API para classificação de sentimento de reviews da Amazon.",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 
-class TextInput(BaseModel):
+class PredictRequest(BaseModel):
     text: str
 
 
-class FeedbackInput(BaseModel):
+class FeedbackRequest(BaseModel):
     text: str
-    user_sentiment: int  # 0 = negativo, 1 = positivo
+    user_sentiment: int  # 1 = positivo, 0 = negativo
 
 
-# ====== Configuração de LOG simples ======
-LOG_DIR = BASE_DIR / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-PREDICTIONS_LOG = LOG_DIR / "predictions_log.csv"
-FEEDBACK_LOG = LOG_DIR / "feedback_log.csv"
-
-# Cabeçalho predictions_log.csv
-if not PREDICTIONS_LOG.exists():
-    with PREDICTIONS_LOG.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["timestamp", "text_length", "sentiment", "confidence"])
-
-# Cabeçalho feedback_log.csv
-if not FEEDBACK_LOG.exists():
-    with FEEDBACK_LOG.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "timestamp",
-            "text_length",
-            "model_sentiment",
-            "model_confidence",
-            "user_sentiment",
-            "is_correct",
-        ])
-# =========================================
-
-
-print(f"🔁 Carregando modelo a partir de: {MODEL_PATH}")
-model = load(MODEL_PATH)
-print("✅ Modelo carregado com sucesso!")
+def _predict_internal(text: str) -> tuple[int, float]:
+    """Executa a previsão usando o modelo carregado."""
+    proba = model.predict_proba([text])[0]
+    # assumindo ordem [negativo, positivo]
+    confidence_positive = float(proba[1])
+    sentiment = 1 if confidence_positive >= 0.5 else 0
+    confidence = confidence_positive if sentiment == 1 else float(proba[0])
+    return sentiment, confidence
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "ok"}
+def health():
+    return {
+        "status": "ok",
+        "model_source": str(MODEL_SOURCE),
+    }
 
 
 @app.post("/predict")
-def predict_sentiment(input_data: TextInput):
-    """
-    Recebe um texto e retorna o sentimento previsto pelo modelo.
-    Também registra a previsão em um log CSV para monitoramento.
-    """
-    review_text = input_data.text
+def predict(request: PredictRequest):
+    text = request.text.strip()
 
-    pred = model.predict([review_text])[0]
-    proba = model.predict_proba([review_text])[0]
+    if not text:
+        return {
+            "error": "Texto vazio não é permitido.",
+        }
 
-    sentiment = int(pred)
+    sentiment, confidence = _predict_internal(text)
+
     label = "positivo" if sentiment == 1 else "negativo"
-    confidence = float(proba[sentiment])
-
-    # Log de previsão
+    text_length = len(text)
     timestamp = datetime.utcnow().isoformat()
-    text_length = len(review_text)
 
+    # Log da predição
     with PREDICTIONS_LOG.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([timestamp, text_length, sentiment, confidence])
+        writer.writerow(
+            [timestamp, text, text_length, sentiment, label, confidence]
+        )
 
     return {
         "sentiment": sentiment,
         "label": label,
         "confidence": confidence,
+        "text_length": text_length,
+        "timestamp": timestamp,
     }
 
 
 @app.post("/feedback")
-def send_feedback(feedback: FeedbackInput):
-    """
-    Endpoint para o usuário enviar o sentimento que ele considera correto.
-    Usamos isso para monitorar a qualidade do modelo em produção.
-    """
-    review_text = feedback.text
-    user_sentiment = int(feedback.user_sentiment)
+def feedback(request: FeedbackRequest):
+    text = request.text.strip()
+    user_sentiment = int(request.user_sentiment)
 
-    # Rodamos o modelo novamente nesse texto
-    pred = model.predict([review_text])[0]
-    proba = model.predict_proba([review_text])[0]
-
-    model_sentiment = int(pred)
-    model_confidence = float(proba[model_sentiment])
+    # Recalcula a previsão do modelo para registrar junto com o feedback
+    model_sentiment, model_confidence = _predict_internal(text)
 
     is_correct = int(model_sentiment == user_sentiment)
-
+    text_length = len(text)
     timestamp = datetime.utcnow().isoformat()
-    text_length = len(review_text)
 
     with FEEDBACK_LOG.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            timestamp,
-            text_length,
-            model_sentiment,
-            model_confidence,
-            user_sentiment,
-            is_correct,
-        ])
+        writer.writerow(
+            [
+                timestamp,
+                text,
+                text_length,
+                model_sentiment,
+                model_confidence,
+                user_sentiment,
+                is_correct,
+            ]
+        )
 
     return {
         "model_sentiment": model_sentiment,

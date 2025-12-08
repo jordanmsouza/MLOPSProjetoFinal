@@ -1,24 +1,41 @@
-# Projeto Final – MLE / MLOps Nível 0  
-Análise de Sentimentos em Reviews da Amazon
+# 🧠 Projeto Final – MLE / MLOps Nível 0  
+# **Análise de Sentimentos em Reviews da Amazon**
 
-Este projeto implementa um pipeline de **Machine Learning + MLOps nível 0** para análise de sentimentos em reviews da Amazon, desde a **ingestão dos dados** até o **serviço do modelo via API** e **monitoramento básico** em produção.
+Este projeto implementa um pipeline completo de **Machine Learning + MLOps nível 0**, passando por:
 
-O objetivo é responder às perguntas do case proposto, mostrando um fluxo completo e reproduzível.
+- ingestão e preparação dos dados  
+- análise exploratória  
+- treinamento e versionamento do modelo (MLflow)  
+- serviço via API FastAPI  
+- logging e monitoramento básico  
+- execução local e via Docker  
+
+O objetivo foi responder ao desafio proposto, criando um fluxo **reproduzível, escalável e alinhado a boas práticas de MLOps**.
 
 ---
 
-## 🧱 Stack utilizada
+## ⚙️ Stack utilizada
 
+### Linguagem e bibliotecas
 - Python 3.9+
-- pandas
-- scikit-learn
-- joblib
-- FastAPI
-- Uvicorn
+- pandas  
+- scikit-learn  
+- joblib  
+
+### MLOps
+- MLflow (tracking + model registry)
+
+### Serviço
+- FastAPI  
+- Uvicorn  
+
+### Infraestrutura
+- Docker  
+- docker-compose  
 
 ---
 
-## 📂 Estrutura do projeto
+## 📂 Estrutura do Projeto
 
 ```bash
 MLOPSProjetoFinal/
@@ -32,8 +49,15 @@ MLOPSProjetoFinal/
 ├── logs/
 │   ├── predictions_log.csv
 │   └── feedback_log.csv
+├── mlruns/                     # MLflow local (tracking + registry)
+│   ├── <experiments>...
+│   └── models/
+│       └── sentiment-logreg-tfidf/
+│           ├── version-1/
+│           └── meta.yaml
+├── mlruns_backup/              # Backup do registry antigo
 ├── models/
-│   └── sentiment_model.joblib
+│   └── sentiment_model.joblib  # fallback local
 ├── notebook/
 │   └── EDA.ipynb
 ├── src/
@@ -43,47 +67,53 @@ MLOPSProjetoFinal/
 │   ├── data_prep.py
 │   ├── train.py
 │   └── serve.py
+├── Dockerfile
+├── docker-compose.yml
 ├── README.md
 └── requirements.txt
 ```
 
 ---
 
-## 📊 Fonte de dados
+## 📊 Fonte de Dados
 
-- Dataset: **Amazon Reviews**
-- Origem: Kaggle  
-- ID usado no código: `kritanjalijain/amazon-reviews`
+Dataset público do Kaggle:
 
-O dataset já vem com as colunas:
+- **Amazon Reviews**  
+- ID: `kritanjalijain/amazon-reviews`
 
-- `label` – rótulo numérico (1 ou 2, já binário)
-- `title` – título curto da review
-- `text` – texto completo da review
+Colunas originais:
 
-Neste projeto, usei o `label` para construir a variável alvo de sentimento.
+| Coluna | Descrição |
+|--------|-----------|
+| `label` | 1 = negativo, 2 = positivo |
+| `title` | título da review |
+| `text` | texto completo |
+
+Para modelagem, usamos apenas `text` e o target `sentiment` convertido para 0/1.
 
 ---
 
-## 🔁 Pipeline de ponta a ponta
+# 🔁 Pipeline Completo
 
-### 1. Ingestão e redução do dataset – `src/ingest_data.py`
+---
 
-Objetivo: baixar o dataset do Kaggle e criar uma **amostra reduzida** para facilitar o desenvolvimento local.
+## **1. Ingestão do Dataset — `src/ingest_data.py`**
 
-Principais pontos:
+O dataset completo é grande (~1.5 GB), então utilizamos:
 
-- Download automático via `kagglehub`.
-- Leitura em **chunks** (`chunksize`) para não estourar memória.
-- Amostragem do conjunto de treino e teste com limite de linhas (`target_size`).
-- Padronização das colunas para: `["label", "title", "text"]`.
+- download automático via `kagglehub`
+- leitura em chunks para evitar estouro de memória
+- amostragem controlada para desenvolvimento mais rápido
 
 Saídas:
 
-- `data/raw/amazon_reviews_train_sample.csv`
-- `data/raw/amazon_reviews_test_sample.csv`
+```
+data/raw/amazon_reviews_train_sample.csv
+data/raw/amazon_reviews_test_sample.csv
+```
 
-**Comando:**
+**Executar:**
 
 ```bash
 python -m src.ingest_data
@@ -91,28 +121,25 @@ python -m src.ingest_data
 
 ---
 
-### 2. Preparação dos dados – `src/data_prep.py`
+## **2. Preparação dos Dados — `src/data_prep.py`**
 
-Objetivo: transformar os dados crus em um formato pronto para modelagem.
+Processos aplicados:
 
-Passos principais:
-
-1. Leitura dos arquivos reduzidos (`raw`).
-2. Seleção das colunas relevantes: `label` e `text`.
-3. Conversão de `label` em `sentiment` binário:
-   - `label == 2` → `sentiment = 1` (positivo)
-   - `label == 1` → `sentiment = 0` (negativo)
-4. Remoção de linhas inválidas / nulas.
-5. **Remoção da coluna `title`** por ser redundante:
-   - o título é muito curto e costuma repetir o sentimento já expresso em `text`;
-   - manter apenas `text` simplifica o modelo, reduz sparsidade e evita features redundantes.
+- uso das colunas `label` e `text`
+- mapeamento de `label → sentiment`  
+  - 1 → 0 (negativo)  
+  - 2 → 1 (positivo)
+- remoção da coluna `title` (redundante)
+- limpeza de linhas inconsistentes
 
 Saídas:
 
-- `data/processed/train.csv` – colunas: `text`, `sentiment`
-- `data/processed/test.csv` – colunas: `text`, `sentiment`
+```
+data/processed/train.csv
+data/processed/test.csv
+```
 
-**Comando:**
+**Executar:**
 
 ```bash
 python -m src.data_prep
@@ -120,52 +147,61 @@ python -m src.data_prep
 
 ---
 
-### 3. Análise Exploratória – `notebook/EDA.ipynb`
+## **3. EDA — `notebook/EDA.ipynb`**
 
-No notebook foram feitas análises como:
+Análises realizadas:
 
-- Visualização das primeiras linhas do dataset.
-- Distribuição da variável `label` / `sentiment`.
-- Exemplos de reviews positivas e negativas.
-- Verificação de balanceamento de classes.
+- distribuição das classes  
+- comprimento dos textos  
+- amostras de textos positivos e negativos  
+- contagem de tokens por classe  
+- estimativa de memória para o dataset completo  
+- justificativa da redução do dataset  
 
-Principais conclusões:
+Conclusões:
 
-- O dataset é binário (labels 1 e 2).
-- Há predominância de reviews positivas.
-- Os textos são longos, favorecendo TF-IDF em n-grams.
+- O dataset reduzido mantém representatividade  
+- TF-IDF é apropriado  
+- Logistic Regression funciona muito bem como baseline  
 
 ---
 
-### 4. Treinamento do modelo – `src/train.py`
+## **4. Treinamento + Registro do Modelo — `src/train.py`**
 
 Modelo utilizado:
 
-- Pipeline:
-  - `TfidfVectorizer`
-    - `max_features=40000`
-    - `ngram_range=(1, 2)`
-    - `stop_words="english"`
-  - `LogisticRegression`
-    - `max_iter=1000`
-    - `n_jobs=-1`
+### **TF-IDF**
+- `max_features=40000`
+- `ngram_range=(1, 2)`
+- `stop_words="english"`
 
-Motivação da escolha:
+### **Logistic Regression**
+- `max_iter=1000`
+- `n_jobs=-1`
 
-- **TF-IDF**: representação clássica e eficiente para texto.
-- **Logistic Regression**: simples, robusta e ideal como baseline.
-
-Métricas calculadas:
+Métricas:
 
 - Accuracy  
+- Precision  
+- Recall  
 - F1-score  
-- Precision / Recall  
 
-Saída:
+### Registro no MLflow
 
-- `models/sentiment_model.joblib`
+```python
+mlflow.register_model(
+    model_uri=f"runs:/{run_id}/model",
+    name="sentiment-logreg-tfidf"
+)
+```
 
-**Comando:**
+Saída local (fallback):
+
+```
+models/sentiment_model.joblib
+```
+
+**Executar:**
 
 ```bash
 python -m src.train
@@ -173,23 +209,25 @@ python -m src.train
 
 ---
 
-### 5. Serviço do modelo – API FastAPI (`src/serve.py`)
+## **5. Servindo o Modelo — `src/serve.py`**
 
-Endpoints:
+A API tenta carregar:
+
+1. Modelo do **MLflow Registry** (alias `latest`)  
+2. Se falhar → fallback para `sentiment_model.joblib`
+
+### **Endpoints**
 
 #### `GET /health`
-Verifica se o serviço está ativo.
+Checa se o serviço está no ar.
 
 #### `POST /predict`
-
 Entrada:
 ```json
-{
-  "text": "This product is amazing!"
-}
+{"text": "This product is amazing!"}
 ```
 
-Saída:
+Resposta:
 ```json
 {
   "sentiment": 1,
@@ -199,126 +237,93 @@ Saída:
 ```
 
 #### `POST /feedback`
+Armazena feedback do usuário:
 
-Entrada:
-```json
-{
-  "text": "This product is amazing!",
-  "user_sentiment": 1
-}
+```
+logs/feedback_log.csv
+logs/predictions_log.csv
 ```
 
-Saída:
-```json
-{
-  "model_sentiment": 1,
-  "model_label": "positivo",
-  "model_confidence": 0.94,
-  "user_sentiment": 1,
-  "is_correct": true,
-  "message": "Feedback registrado com sucesso."
-}
-```
+**Executar API localmente:**
 
-**Comando para subir a API:**
 ```bash
 uvicorn src.serve:app --reload
 ```
 
-Docs automáticas:
-http://127.0.0.1:8000/docs
+Swagger:
+```
+http://localhost:8000/docs
+```
 
 ---
 
-## 📈 Monitoramento do modelo
+# 🐳 Execução com Docker
 
-O monitoramento está dividido em três camadas:
+### Subir API + MLflow UI
 
-### 1. Saúde do serviço (API)
-- Endpoint `/health`
-- Logs do servidor com status codes e tempos de resposta
+```bash
+docker compose up --build
+```
 
-### 2. Monitoramento das previsões (prediction drift)
-Cada chamada ao `/predict` gera um registro em:
+### Acessos
 
+- API → http://localhost:8000  
+- Swagger → http://localhost:8000/docs  
+- MLflow UI → http://localhost:5000  
+
+---
+
+# 📈 Monitoramento
+
+### Prediction Log → drift básico
+
+Arquivo:
 ```
 logs/predictions_log.csv
 ```
 
 Campos:
-
 - timestamp  
 - text_length  
-- sentiment  
+- model_sentiment  
 - confidence  
 
-Isso permite acompanhar:
-- distribuição das previsões ao longo do tempo  
-- mudanças no padrão dos textos (ex.: textos muito curtos)  
-- possíveis sinais de drift
+### Feedback Loop → qualidade real em produção
 
-### 3. Qualidade do modelo em produção (feedback)
-
-Cada chamada a `/feedback` gera:
-
+Arquivo:
 ```
 logs/feedback_log.csv
 ```
 
 Campos:
-
-- timestamp  
-- text_length  
-- model_sentiment  
-- model_confidence  
 - user_sentiment  
+- model_sentiment  
 - is_correct  
 
-Permite calcular uma **acurácia em produção** usando:
+Permite medir:
 
-```
-mean(is_correct)
-```
-
-E comparar com resultados offline.
+- acurácia de produção  
+- divergência entre offline x online  
 
 ---
 
-## 🧪 Como reproduzir o pipeline completo
+# 🧠 Decisões de Modelagem
 
-```bash
-# 1. Ingestão + amostragem
-python -m src.ingest_data
-
-# 2. Preparação dos dados
-python -m src.data_prep
-
-# 3. Treinamento do modelo
-python -m src.train
-
-# 4. Subir API
-uvicorn src.serve:app --reload
-```
+- chunking para otimizar ingestão  
+- remoção de `title` por redundância  
+- TF-IDF + Logistic Regression = baseline robusto  
+- MLflow como registry + tracking  
+- logs estruturados para monitoramento  
+- API FastAPI para servir o modelo  
 
 ---
 
-## 🧠 Decisões de modelagem (resumo)
+# 🚀 Melhorias Futuras
 
-- Uso de amostragem por chunks para processar datasets grandes.
-- labels 1 e 2 transformados em sentimento (0/1).
-- Remoção da coluna `title` por redundância.
-- TF-IDF + Logistic Regression como baseline simples e eficaz.
-- Serviço via FastAPI.
-- Log de previsões + log de feedback para monitoramento contínuo.
-
----
-
-## 🚀 Melhorias futuras
-
-- Testes unitários e de integração
-- Containerização com Docker
-- Pipeline CI/CD
-- Re-treino automático com base em feedback
-- Monitoramento avançado com EvidentlyAI
+- Testes unitários e integração  
+- EvidentlyAI para monitoramento avançado de drift  
+- CI/CD com pipelines automáticos  
+- Retreino automático baseado em feedback do usuário  
+- Orquestração com Airflow ou Prefect  
 
 ---

@@ -1,0 +1,14 @@
+artifact_uri: file:C:/Users/jorda/OneDrive/Documentos/Mentoria_ML_ITAU/MLOPSProjetoFinal/mlruns/139583362799314795/6e61414555d84f4c90a29ff40282d6d0/artifacts
+end_time: 1765129333043
+entry_point_name: ''
+experiment_id: '139583362799314795'
+lifecycle_stage: active
+run_id: 6e61414555d84f4c90a29ff40282d6d0
+run_name: sincere-croc-92
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1765129305368
+status: 3
+tags: []
+user_id: jorda

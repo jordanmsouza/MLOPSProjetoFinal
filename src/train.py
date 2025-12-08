@@ -1,36 +1,57 @@
 # src/train.py
 from __future__ import annotations
 
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 from joblib import dump
-from pathlib import Path
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.pipeline import Pipeline
 
 from .config import (
     DATA_PROCESSED_TRAIN,
     DATA_PROCESSED_TEST,
     MODEL_PATH,
+    MLFLOW_TRACKING_URI,
+    MLFLOW_EXPERIMENT_NAME,
+    MLFLOW_MODEL_NAME,
 )
 
 
-def load_data():
-    if not Path(DATA_PROCESSED_TRAIN).exists():
-        raise FileNotFoundError(f"Train processado não encontrado: {DATA_PROCESSED_TRAIN}")
-
-    if not Path(DATA_PROCESSED_TEST).exists():
-        raise FileNotFoundError(f"Test processado não encontrado: {DATA_PROCESSED_TEST}")
-
-    print(f"📥 Lendo train: {DATA_PROCESSED_TRAIN}")
+def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Carrega dados processados de treino e teste."""
+    print("📥 Lendo dados processados...")
     train_df = pd.read_csv(DATA_PROCESSED_TRAIN)
-
-    print(f"📥 Lendo test: {DATA_PROCESSED_TEST}")
     test_df = pd.read_csv(DATA_PROCESSED_TEST)
 
+    print(f"Train: {train_df.shape}, Test: {test_df.shape}")
     return train_df, test_df
+
+
+def build_pipeline() -> Pipeline:
+    """Cria o pipeline de TF-IDF + Regressão Logística."""
+    pipeline = Pipeline(
+        steps=[
+            (
+                "tfidf",
+                TfidfVectorizer(
+                    max_features=40_000,
+                    ngram_range=(1, 2),
+                    stop_words="english",
+                ),
+            ),
+            (
+                "clf",
+                LogisticRegression(
+                    max_iter=1_000,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+    return pipeline
 
 
 def train_model(train_df: pd.DataFrame, test_df: pd.DataFrame):
@@ -40,39 +61,47 @@ def train_model(train_df: pd.DataFrame, test_df: pd.DataFrame):
     X_test = test_df["text"]
     y_test = test_df["sentiment"]
 
-    # Pipeline TF-IDF → Regressão Logística
-    pipeline = Pipeline([
-        ("tfidf", TfidfVectorizer(
-            max_features=40000,
-            ngram_range=(1, 2),
-            stop_words="english"
-        )),
-        ("clf", LogisticRegression(
-            max_iter=1000,
-            n_jobs=-1
-        )),
-    ])
+    pipeline = build_pipeline()
 
-    print("\n🚀 Treinando modelo...")
-    pipeline.fit(X_train, y_train)
+    # Configura MLflow
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
-    print("\n📊 Avaliando modelo...")
-    y_pred = pipeline.predict(X_test)
+    with mlflow.start_run():
+        print("\n🚀 Treinando modelo...")
+        pipeline.fit(X_train, y_train)
 
-    acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
+        print("\n📊 Avaliando modelo...")
+        y_pred = pipeline.predict(X_test)
 
-    print(f"\n🔎 Accuracy: {acc:.4f}")
-    print(f"🔎 F1-Score: {f1:.4f}")
+        acc = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
 
-    print("\n📄 Classification Report:")
-    print(classification_report(y_test, y_pred))
+        print(f"Accuracy: {acc:.4f}")
+        print(f"F1-score: {f1:.4f}")
+        print("\nClassification report:")
+        print(classification_report(y_test, y_pred))
 
-    # Salvar modelo
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    dump(pipeline, MODEL_PATH)
+        # Log de parâmetros
+        mlflow.log_param("tfidf_max_features", 40_000)
+        mlflow.log_param("tfidf_ngram_range", "1-2")
+        mlflow.log_param("clf_max_iter", 1_000)
 
-    print(f"\n💾 Modelo salvo em: {MODEL_PATH}")
+        # Log de métricas
+        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("f1", f1)
+
+        # Log do modelo no MLflow (Model Registry)
+        mlflow.sklearn.log_model(
+            sk_model=pipeline,
+            artifact_path="model",
+            registered_model_name=MLFLOW_MODEL_NAME,
+        )
+
+        # Também salva localmente para servir via joblib (como já fazemos hoje)
+        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        dump(pipeline, MODEL_PATH)
+        print(f"💾 Modelo salvo em: {MODEL_PATH}")
 
     return pipeline, acc, f1
 
