@@ -1,0 +1,10 @@
+artifact_location: file:C:/Users/jorda/OneDrive/Documentos/Mentoria_ML_ITAU/MLOPSProjetoFinal/mlruns/139583362799314795/models/m-d7a7e016ea6f4f9ab1ceeb140ecf9ba3/artifacts
+creation_timestamp: 1765129326558
+experiment_id: '139583362799314795'
+last_updated_timestamp: 1765129332591
+model_id: m-d7a7e016ea6f4f9ab1ceeb140ecf9ba3
+model_type: null
+name: model
+source_run_id: 6e61414555d84f4c90a29ff40282d6d0
+status: 2
+status_message: null

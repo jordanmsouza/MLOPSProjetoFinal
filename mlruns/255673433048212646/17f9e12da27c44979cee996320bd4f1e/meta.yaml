@@ -1,0 +1,14 @@
+artifact_uri: file:///app/mlruns/255673433048212646/17f9e12da27c44979cee996320bd4f1e/artifacts
+end_time: 1765149531486
+entry_point_name: ''
+experiment_id: '255673433048212646'
+lifecycle_stage: active
+run_id: 17f9e12da27c44979cee996320bd4f1e
+run_name: adorable-dog-389
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1765149502955
+status: 3
+tags: []
+user_id: root

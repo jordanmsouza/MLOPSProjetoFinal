@@ -1,0 +1,6 @@
+artifact_location: file:C:/Users/jorda/OneDrive/Documentos/Mentoria_ML_ITAU/MLOPSProjetoFinal/mlruns/139583362799314795
+creation_time: 1765129304375
+experiment_id: '139583362799314795'
+last_update_time: 1765129304375
+lifecycle_stage: active
+name: sentiment_analysis_amazon_reviews

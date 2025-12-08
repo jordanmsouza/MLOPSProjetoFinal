@@ -1,0 +1,6 @@
+artifact_location: file:///app/mlruns/255673433048212646
+creation_time: 1765149502848
+experiment_id: '255673433048212646'
+last_update_time: 1765149502848
+lifecycle_stage: active
+name: sentiment_analysis_amazon_reviews

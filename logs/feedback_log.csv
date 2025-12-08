@@ -1,0 +1,2 @@
+timestamp,text,text_length,model_sentiment,model_confidence,user_sentiment,is_correct
+2025-12-08T02:04:29.466451,love it,7,1,0.9989479108518748,1,1
